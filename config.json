@@ -1,0 +1,60 @@
+{
+  "app": {
+    "name": "Somethingify",
+    "version": "1.0.0",
+    "author": "Shivraj Suman",
+    "description": "A Spotify-like PowerShell Music Player"
+  },
+  "music_source": {
+    "primary": "spotify",
+    "fallback": "youtube_music",
+    "api_key": "",
+    "api_secret": ""
+  },
+  "playback": {
+    "default_quality": "high",
+    "quality_options": [
+      "low",
+      "medium",
+      "high",
+      "very_high"
+    ],
+    "volume": 80,
+    "repeat_mode": "off",
+    "shuffle": false
+  },
+  "ui": {
+    "theme": "dark",
+    "color_scheme": "cyan",
+    "display_mode": "compact",
+    "show_ascii_art": true,
+    "enable_visualizer": true
+  },
+  "user_preferences": {
+    "preferred_genre": "all",
+    "language": "en",
+    "save_history": true,
+    "auto_save_playlists": true,
+    "sync_likes": true
+  },
+  "cache": {
+    "enabled": true,
+    "cache_dir": "./cache",
+    "max_cache_size_mb": 500,
+    "cache_expiry_days": 7
+  },
+  "logging": {
+    "level": "INFO",
+    "log_file": "somethingify.log",
+    "max_log_size_mb": 10,
+    "backup_count": 5
+  },
+  "advanced": {
+    "enable_debug_mode": false,
+    "connection_timeout": 10,
+    "retry_attempts": 3,
+    "parallel_downloads": 4,
+    "use_proxy": false,
+    "proxy_url": ""
+  }
+}
