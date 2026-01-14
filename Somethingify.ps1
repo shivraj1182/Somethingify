@@ -1,281 +1,292 @@
 #!/usr/bin/env pwsh
 <#
 .DESCRIPTION
-    Somethingify - A Spotify-like PowerShell Music Player
-    A free, open-source PowerShell application
-
+    Somethingify - Real PowerShell Spotify Clone
+    Uses Spotify API for metadata and yt-dlp for audio streaming
+    
 .AUTHOR
     Shivraj Suman
-
+    
 .VERSION
-    1.0.3
+    2.0.0-beta (Real Implementation)
 #>
 
 param()
 
-# Global variables
-$global:likedSongs = @()
-$global:currentQueue = @()
-$global:playlists = @{}
-$global:isPlaying = $false
-$global:searchResults = @()
-$global:downloadPath = "$env:USERPROFILE\Downloads\Somethingify"
+# ==================== CONFIG ====================
+$CONFIG = @{
+    SpotifyClientId = "YOUR_SPOTIFY_CLIENT_ID"
+    SpotifyClientSecret = "YOUR_SPOTIFY_CLIENT_SECRET"
+    PlaylistDir = "$env:USERPROFILE\Somethingify\playlists"
+    CacheDir = "$env:USERPROFILE\Somethingify\cache"
+    DownloadDir = "$env:USERPROFILE\Music\Somethingify"
+    VLCPath = "C:\Program Files\VideoLAN\VLC\vlc.exe"
+}
 
-# Music Database with real variations
-$global:musicDatabase = @(
-    @{Title = "Bohemian Rhapsody"; Artist = "Queen"; Duration = "5:55"; DurationSeconds = 355 },
-    @{Title = "Stairway to Heaven"; Artist = "Led Zeppelin"; Duration = "8:02"; DurationSeconds = 482 },
-    @{Title = "Imagine"; Artist = "John Lennon"; Duration = "3:03"; DurationSeconds = 183 },
-    @{Title = "Like a Rolling Stone"; Artist = "Bob Dylan"; Duration = "6:13"; DurationSeconds = 373 },
-    @{Title = "Hotel California"; Artist = "Eagles"; Duration = "6:30"; DurationSeconds = 390 },
-    @{Title = "Hey Jude"; Artist = "The Beatles"; Duration = "7:11"; DurationSeconds = 431 },
-    @{Title = "Sweet Child o Mine"; Artist = "Guns N Roses"; Duration = "5:56"; DurationSeconds = 356 },
-    @{Title = "Hallelujah"; Artist = "Leonard Cohen"; Duration = "4:34"; DurationSeconds = 274 },
-    @{Title = "Black"; Artist = "Pearl Jam"; Duration = "5:43"; DurationSeconds = 343 },
-    @{Title = "Wonderwall"; Artist = "Oasis"; Duration = "4:18"; DurationSeconds = 258 }
-)
+# ==================== GLOBAL VARIABLES ====================
+$global:CurrentTrack = $null
+$global:IsPlaying = $false
+$global:Playlists = @{}
+$global:SpotifyToken = $null
+$global:VLCProcess = $null
 
+# ==================== INITIALIZATION ====================
 function Initialize-Somethingify {
     Clear-Host
     Write-Host "" 
     Write-Host "========================================" -ForegroundColor Cyan
-    Write-Host "    SOMETHINGIFY - Music Player" -ForegroundColor Green
-    Write-Host "    v1.0.3 (Fixed Prototype)" -ForegroundColor Yellow
+    Write-Host "   SOMETHINGIFY - Real Spotify Clone" -ForegroundColor Green
+    Write-Host "   v2.0.0-beta" -ForegroundColor Yellow
     Write-Host "========================================" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "Initializing Somethingify..." -ForegroundColor Yellow
     
-    if (-not (Test-Path $global:downloadPath)) {
-        New-Item -ItemType Directory -Path $global:downloadPath -ErrorAction SilentlyContinue | Out-Null
-        Write-Host "Created download folder" -ForegroundColor Cyan
+    # Check dependencies
+    Write-Host "Checking dependencies..." -ForegroundColor Yellow
+    
+    if (-not (Get-Command yt-dlp -ErrorAction SilentlyContinue)) {
+        Write-Host "⚠️  yt-dlp not found. Install with: pip install yt-dlp" -ForegroundColor Red
+        Write-Host "Without yt-dlp, audio streaming won't work." -ForegroundColor Yellow
+    } else {
+        Write-Host "✓ yt-dlp installed" -ForegroundColor Green
     }
     
-    $global:playlists["Liked Songs"] = @()
-    $global:playlists["Downloaded"] = @()
+    if (-not (Test-Path $CONFIG.VLCPath)) {
+        Write-Host "⚠️  VLC not found. Install from: https://www.videolan.org/" -ForegroundColor Red
+        Write-Host "Without VLC, playback won't work." -ForegroundColor Yellow
+    } else {
+        Write-Host "✓ VLC installed" -ForegroundColor Green
+    }
     
-    Start-Sleep -Milliseconds 800
-    Write-Host "Ready to play!" -ForegroundColor Green
+    # Create directories
+    @($CONFIG.PlaylistDir, $CONFIG.CacheDir, $CONFIG.DownloadDir) | ForEach-Object {
+        if (-not (Test-Path $_)) {
+            New-Item -ItemType Directory -Path $_ -Force | Out-Null
+        }
+    }
+    
+    Write-Host "✓ Directories initialized" -ForegroundColor Green
     Write-Host ""
-    Start-Sleep -Milliseconds 500
+    Write-Host "SETUP REQUIRED:" -ForegroundColor Cyan
+    Write-Host "1. Get Spotify API credentials from: https://developer.spotify.com" -ForegroundColor White
+    Write-Host "2. Run: Set-SpotifyCredentials" -ForegroundColor White
+    Write-Host ""
+    Start-Sleep -Milliseconds 1000
 }
 
-function Show-MainMenu {
+# ==================== SPOTIFY API ====================
+function Set-SpotifyCredentials {
     Write-Host ""
-    Write-Host "========================================" -ForegroundColor Cyan
-    Write-Host "1. Search for a song" -ForegroundColor White
-    Write-Host "2. Get recommendations" -ForegroundColor White
-    Write-Host "3. View playlists" -ForegroundColor White
-    Write-Host "4. View liked songs" -ForegroundColor White
-    Write-Host "5. View downloaded songs" -ForegroundColor White
-    Write-Host "6. Settings" -ForegroundColor White
-    Write-Host "7. Exit" -ForegroundColor White
-    Write-Host "========================================" -ForegroundColor Cyan
+    Write-Host "Enter your Spotify API credentials:" -ForegroundColor Cyan
+    $clientId = Read-Host "Client ID"
+    $clientSecret = Read-Host "Client Secret" -AsSecureString
+    
+    $CONFIG.SpotifyClientId = $clientId
+    $CONFIG.SpotifyClientSecret = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto([System.Runtime.InteropServices.Marshal]::SecureStringToCoTaskMemUnicode($clientSecret))
+    
+    # Get token
+    Get-SpotifyToken
+    Write-Host "✓ Credentials saved" -ForegroundColor Green
     Write-Host ""
 }
 
-function Search-Song {
-    Write-Host ""
-    Write-Host "Search for a song:" -ForegroundColor Cyan
-    $query = Read-Host "Enter song name (or part of it)"
+function Get-SpotifyToken {
+    $auth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("$($CONFIG.SpotifyClientId):$($CONFIG.SpotifyClientSecret)"))
     
-    if ([string]::IsNullOrEmpty($query)) {
-        Write-Host "Search query cannot be empty" -ForegroundColor Red
-        return
-    }
-    
-    Write-Host "Searching for '$query'..." -ForegroundColor Yellow
-    Start-Sleep -Milliseconds 600
-    
-    $results = @($global:musicDatabase | Where-Object { $_.Title -ilike "*$query*" -or $_.Artist -ilike "*$query*" })
-    
-    if ($results.Count -eq 0) {
-        Write-Host "No songs found. Try different search term." -ForegroundColor Yellow
-        return
-    }
-    
-    $global:searchResults = $results
-    
-    Write-Host "Found $($results.Count) result(s):" -ForegroundColor Green
-    Write-Host ""
-    
-    for ($i = 0; $i -lt $results.Count; $i++) {
-        Write-Host "$($i+1). $($results[$i].Title) - $($results[$i].Artist) [$($results[$i].Duration)]" -ForegroundColor Cyan
-    }
-    
-    Write-Host ""
-    Write-Host "Options:" -ForegroundColor Cyan
-    Write-Host "a) Play now" -ForegroundColor White
-    Write-Host "b) Like a song" -ForegroundColor White
-    Write-Host "c) Back to menu" -ForegroundColor White
-    Write-Host ""
-    
-    $option = Read-Host "Select option (a/b/c)"
-    
-    switch ($option.ToLower()) {
-        "a" { Play-SelectedSong }
-        "b" { Like-SelectedSong }
-        "c" { return }
-        default { Write-Host "Invalid option" -ForegroundColor Red }
+    try {
+        $response = Invoke-RestMethod -Uri "https://accounts.spotify.com/api/token" `
+            -Method POST `
+            -Headers @{Authorization = "Basic $auth"} `
+            -Body @{grant_type = "client_credentials"} `
+            -ErrorAction Stop
+        
+        $global:SpotifyToken = $response.access_token
+        return $true
+    } catch {
+        Write-Host "✗ Failed to get Spotify token" -ForegroundColor Red
+        Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red
+        return $false
     }
 }
 
-function Play-SelectedSong {
-    Write-Host ""
-    Write-Host "Select song number to play:" -ForegroundColor Cyan
-    $songNum = Read-Host "Enter number (1-$($global:searchResults.Count))"
+function Search-Spotify {
+    param([string]$Query, [string]$Type = "track")
     
-    if (-not ([int]::TryParse($songNum, [ref]$null)) -or $songNum -lt 1 -or $songNum -gt $global:searchResults.Count) {
-        Write-Host "Invalid selection" -ForegroundColor Red
+    if (-not $global:SpotifyToken) {
+        Write-Host "Please configure Spotify credentials first" -ForegroundColor Red
+        return $null
+    }
+    
+    try {
+        $uri = "https://api.spotify.com/v1/search?q=$([uri]::EscapeDataString($Query))&type=$Type&limit=10"
+        $response = Invoke-RestMethod -Uri $uri `
+            -Headers @{Authorization = "Bearer $($global:SpotifyToken)"} `
+            -ErrorAction Stop
+        
+        return $response.tracks.items
+    } catch {
+        Write-Host "Search failed: $($_.Exception.Message)" -ForegroundColor Red
+        return $null
+    }
+}
+
+# ==================== AUDIO STREAMING ====================
+function Get-AudioURL {
+    param([string]$SongTitle, [string]$Artist)
+    
+    Write-Host "Fetching audio URL..." -ForegroundColor Yellow
+    
+    try {
+        $searchQuery = "$SongTitle $Artist audio"
+        $url = (yt-dlp -f best --get-url "ytsearch:$searchQuery" 2>$null | Select-Object -First 1)
+        return $url
+    } catch {
+        Write-Host "Failed to get audio URL" -ForegroundColor Red
+        return $null
+    }
+}
+
+function Play-Song {
+    param([object]$Track)
+    
+    if (-not $Track) {
+        Write-Host "No track selected" -ForegroundColor Red
         return
     }
     
-    $song = $global:searchResults[[int]$songNum - 1]
-    
     Write-Host ""
-    Write-Host "Now playing: $($song.Title)" -ForegroundColor Green
-    Write-Host "Artist: $($song.Artist)" -ForegroundColor Yellow
-    Write-Host "Duration: $($song.Duration)" -ForegroundColor Magenta
+    Write-Host "Now playing:" -ForegroundColor Green
+    Write-Host "Title: $($Track.name)" -ForegroundColor Cyan
+    Write-Host "Artist: $($Track.artists[0].name)" -ForegroundColor Yellow
+    Write-Host "Album: $($Track.album.name)" -ForegroundColor Magenta
+    Write-Host "Popularity: $($Track.popularity)/100" -ForegroundColor White
     Write-Host ""
     
-    # Play with actual duration
-    $durationMs = $song.DurationSeconds * 100  # Scale down for demo (use 100ms per second for demo)
-    $steps = [Math]::Ceiling($song.DurationSeconds / 5)  # Update progress every 5 seconds
+    $audioUrl = Get-AudioURL -SongTitle $Track.name -Artist $Track.artists[0].name
     
-    for ($i = 0; $i -le 100; $i += (100/$steps)) {
-        $barLength = [Math]::Round($i / 5)
-        $emptyLength = 20 - $barLength
-        Write-Host -NoNewLine "`r[$('=' * $barLength)$(" " * $emptyLength)] $([Math]::Round($i))% "
-        Start-Sleep -Milliseconds 300
+    if ($audioUrl) {
+        Write-Host "Playing audio..." -ForegroundColor Green
+        # Start VLC with URL
+        if (Test-Path $CONFIG.VLCPath) {
+            $global:VLCProcess = Start-Process -FilePath $CONFIG.VLCPath -ArgumentList $audioUrl -PassThru
+            Write-Host "Press any key to stop..." -ForegroundColor Yellow
+            $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+            Stop-Process -Id $global:VLCProcess.Id -ErrorAction SilentlyContinue
+        } else {
+            Write-Host "VLC not found. Install VLC to play audio." -ForegroundColor Red
+        }
     }
-    Write-Host "`r[$('=' * 20)] 100%" 
     
-    Write-Host "Finished playing" -ForegroundColor Green
     Write-Host ""
-    
-    # Ask to download
-    Write-Host "Download this song?" -ForegroundColor Cyan
-    Write-Host "y) Yes   n) No" -ForegroundColor White
-    $dlChoice = Read-Host "Choose (y/n)"
-    
-    if ($dlChoice.ToLower() -eq "y") {
-        Download-Song $song
-    }
 }
 
 function Download-Song {
-    param([hashtable]$song)
+    param([object]$Track)
     
-    Write-Host ""
-    Write-Host "Downloading: $($song.Title)" -ForegroundColor Yellow
-    Write-Host "Artist: $($song.Artist)" -ForegroundColor Cyan
-    Write-Host ""
+    Write-Host "Downloading..." -ForegroundColor Yellow
+    $filename = "$($Track.artists[0].name) - $($Track.name).mp3"
+    $filepath = Join-Path $CONFIG.DownloadDir $filename
     
-    for ($i = 0; $i -le 100; $i += 20) {
-        $barLength = [Math]::Round($i / 5)
-        $emptyLength = 20 - $barLength
-        Write-Host -NoNewLine "`r[Download] [$('=' * $barLength)$(" " * $emptyLength)] $i% "
-        Start-Sleep -Milliseconds 300
+    try {
+        yt-dlp -f best -o "$filepath" "ytsearch:$($Track.name) $($Track.artists[0].name)"
+        Write-Host "Downloaded to: $filepath" -ForegroundColor Green
+    } catch {
+        Write-Host "Download failed: $($_.Exception.Message)" -ForegroundColor Red
     }
-    
-    $filename = "$($song.Title -replace '[^a-zA-Z0-9 ]', '_').mp3"
-    $filepath = Join-Path $global:downloadPath $filename
-    
-    Write-Host "`r[Download] [$('=' * 20)] 100%" 
-    Write-Host ""
-    Write-Host "Saved to: $filepath" -ForegroundColor Green
-    
-    if (-not ($global:playlists["Downloaded"] -contains $song.Title)) {
-        $global:playlists["Downloaded"] += $song.Title
-    }
-    Write-Host ""
 }
 
-function Like-SelectedSong {
-    Write-Host ""
-    Write-Host "Select song number to like:" -ForegroundColor Cyan
-    $songNum = Read-Host "Enter number (1-$($global:searchResults.Count))"
+# ==================== PLAYLISTS ====================
+function Create-Playlist {
+    param([string]$Name)
     
-    if (-not ([int]::TryParse($songNum, [ref]$null)) -or $songNum -lt 1 -or $songNum -gt $global:searchResults.Count) {
-        Write-Host "Invalid selection" -ForegroundColor Red
+    $playlistPath = Join-Path $CONFIG.PlaylistDir "$Name.json"
+    
+    if (Test-Path $playlistPath) {
+        Write-Host "Playlist already exists" -ForegroundColor Yellow
         return
     }
     
-    $song = $global:searchResults[[int]$songNum - 1]
+    @{name = $Name; songs = @(); created = (Get-Date)} | ConvertTo-Json | Set-Content $playlistPath
+    Write-Host "✓ Playlist created: $Name" -ForegroundColor Green
+}
+
+function Add-ToPlaylist {
+    param([string]$PlaylistName, [object]$Track)
     
-    if (-not ($global:playlists["Liked Songs"] -contains $song.Title)) {
-        $global:playlists["Liked Songs"] += $song.Title
-        Write-Host "Liked: $($song.Title)" -ForegroundColor Red
-    } else {
-        Write-Host "Already liked this song" -ForegroundColor Yellow
+    $playlistPath = Join-Path $CONFIG.PlaylistDir "$PlaylistName.json"
+    
+    if (-not (Test-Path $playlistPath)) {
+        Write-Host "Playlist not found" -ForegroundColor Red
+        return
     }
+    
+    $playlist = Get-Content $playlistPath | ConvertFrom-Json
+    $playlist.songs += $Track
+    $playlist | ConvertTo-Json -Depth 10 | Set-Content $playlistPath
+    
+    Write-Host "✓ Added to playlist" -ForegroundColor Green
+}
+
+# ==================== MAIN MENU ====================
+function Show-MainMenu {
+    Write-Host ""
+    Write-Host "========================================" -ForegroundColor Cyan
+    Write-Host "1. Search songs" -ForegroundColor White
+    Write-Host "2. Create playlist" -ForegroundColor White
+    Write-Host "3. My playlists" -ForegroundColor White
+    Write-Host "4. Settings" -ForegroundColor White
+    Write-Host "5. Exit" -ForegroundColor White
+    Write-Host "========================================" -ForegroundColor Cyan
     Write-Host ""
 }
 
-function Get-Recommendations {
+function Search-Menu {
     Write-Host ""
-    Write-Host "Recommended songs for you:" -ForegroundColor Green
+    Write-Host "Search on Spotify:" -ForegroundColor Cyan
+    $query = Read-Host "Enter song name or artist"
+    
+    if ([string]::IsNullOrEmpty($query)) {
+        return
+    }
+    
+    Write-Host "Searching..." -ForegroundColor Yellow
+    $results = Search-Spotify -Query $query
+    
+    if (-not $results) {
+        Write-Host "No results found" -ForegroundColor Yellow
+        return
+    }
+    
+    Write-Host "Found $($results.Count) tracks:" -ForegroundColor Green
     Write-Host ""
     
-    $recommendations = $global:musicDatabase | Get-Random -Count 3
-    
-    for ($i = 0; $i -lt $recommendations.Count; $i++) {
-        Write-Host "$($i+1). $($recommendations[$i].Title) - $($recommendations[$i].Artist)" -ForegroundColor Magenta
+    for ($i = 0; $i -lt $results.Count; $i++) {
+        Write-Host "$($i+1). $($results[$i].name) - $($results[$i].artists[0].name)" -ForegroundColor Cyan
     }
     
     Write-Host ""
-}
-
-function View-Playlists {
-    Write-Host ""
-    Write-Host "Your Playlists:" -ForegroundColor Cyan
-    Write-Host ""
+    $choice = Read-Host "Select track (number) or press Enter to skip"
     
-    foreach ($playlist in $global:playlists.Keys) {
-        $count = $global:playlists[$playlist].Count
-        Write-Host "$playlist: $count song(s)" -ForegroundColor White
-    }
-    
-    Write-Host ""
-}
-
-function View-LikedSongs {
-    Write-Host ""
-    Write-Host "Your Liked Songs:" -ForegroundColor Cyan
-    Write-Host ""
-    
-    if ($global:playlists["Liked Songs"].Count -eq 0) {
-        Write-Host "No liked songs yet" -ForegroundColor Yellow
-    } else {
-        $global:playlists["Liked Songs"] | ForEach-Object { 
-            Write-Host "♥ $_" -ForegroundColor Red
+    if ($choice -and $choice -ge 1 -and $choice -le $results.Count) {
+        $selected = $results[[int]$choice - 1]
+        
+        Write-Host ""
+        Write-Host "Options:" -ForegroundColor Cyan
+        Write-Host "a) Play" -ForegroundColor White
+        Write-Host "b) Download" -ForegroundColor White
+        Write-Host "c) Add to playlist" -ForegroundColor White
+        Write-Host "d) Back" -ForegroundColor White
+        
+        $option = Read-Host "Choose (a/b/c/d)"
+        
+        switch ($option.ToLower()) {
+            "a" { Play-Song $selected }
+            "b" { Download-Song $selected }
+            "c" { 
+                $playlistName = Read-Host "Playlist name"
+                Add-ToPlaylist $playlistName $selected
+            }
         }
     }
-    
-    Write-Host ""
-}
-
-function View-Downloaded {
-    Write-Host ""
-    Write-Host "Your Downloaded Songs:" -ForegroundColor Cyan
-    Write-Host ""
-    
-    if ($global:playlists["Downloaded"].Count -eq 0) {
-        Write-Host "No downloaded songs yet" -ForegroundColor Yellow
-    } else {
-        $global:playlists["Downloaded"] | ForEach-Object { 
-            Write-Host "↓ $_" -ForegroundColor Green
-        }
-    }
-    
-    Write-Host ""
-}
-
-function Show-Settings {
-    Write-Host ""
-    Write-Host "Settings:" -ForegroundColor Cyan
-    Write-Host "Download Folder: $global:downloadPath" -ForegroundColor White
-    Write-Host "Music Database: $($global:musicDatabase.Count) songs available" -ForegroundColor White
-    Write-Host ""
 }
 
 function Main {
@@ -283,21 +294,25 @@ function Main {
     
     while ($true) {
         Show-MainMenu
-        $choice = Read-Host "Select option (1-7)"
+        $choice = Read-Host "Select option (1-5)"
         
         switch ($choice) {
-            "1" { Search-Song }
-            "2" { Get-Recommendations }
-            "3" { View-Playlists }
-            "4" { View-LikedSongs }
-            "5" { View-Downloaded }
-            "6" { Show-Settings }
-            "7" { 
-                Write-Host "Thanks for using Somethingify! Goodbye!" -ForegroundColor Green
-                Write-Host ""
-                exit 
+            "1" { Search-Menu }
+            "2" { 
+                $name = Read-Host "Playlist name"
+                Create-Playlist $name
             }
-            default { Write-Host "Invalid option. Try 1-7." -ForegroundColor Red }
+            "3" { 
+                Get-ChildItem $CONFIG.PlaylistDir -Filter "*.json" | ForEach-Object {
+                    Write-Host "• $($_.BaseName)" -ForegroundColor Cyan
+                }
+            }
+            "4" { Set-SpotifyCredentials }
+            "5" { 
+                Write-Host "Goodbye!" -ForegroundColor Green
+                exit
+            }
+            default { Write-Host "Invalid option" -ForegroundColor Red }
         }
     }
 }
