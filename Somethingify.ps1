@@ -8,12 +8,11 @@
     Shivraj Suman
     
 .VERSION
-    2.0.0-beta (Real Implementation)
+    2.0.0 (Real Implementation)
 #>
 
 param()
 
-# ==================== CONFIG ====================
 $CONFIG = @{
     SpotifyClientId = "YOUR_SPOTIFY_CLIENT_ID"
     SpotifyClientSecret = "YOUR_SPOTIFY_CLIENT_SECRET"
@@ -23,48 +22,43 @@ $CONFIG = @{
     VLCPath = "C:\Program Files\VideoLAN\VLC\vlc.exe"
 }
 
-# ==================== GLOBAL VARIABLES ====================
 $global:CurrentTrack = $null
 $global:IsPlaying = $false
 $global:Playlists = @{}
 $global:SpotifyToken = $null
 $global:VLCProcess = $null
 
-# ==================== INITIALIZATION ====================
 function Initialize-Somethingify {
     Clear-Host
-    Write-Host "" 
+    Write-Host ""
     Write-Host "========================================" -ForegroundColor Cyan
     Write-Host "   SOMETHINGIFY - Real Spotify Clone" -ForegroundColor Green
-    Write-Host "   v2.0.0-beta" -ForegroundColor Yellow
+    Write-Host "   v2.0.0" -ForegroundColor Yellow
     Write-Host "========================================" -ForegroundColor Cyan
     Write-Host ""
-    
-    # Check dependencies
     Write-Host "Checking dependencies..." -ForegroundColor Yellow
     
     if (-not (Get-Command yt-dlp -ErrorAction SilentlyContinue)) {
-        Write-Host "⚠️  yt-dlp not found. Install with: pip install yt-dlp" -ForegroundColor Red
+        Write-Host "[!] yt-dlp not found. Install with: pip install yt-dlp" -ForegroundColor Red
         Write-Host "Without yt-dlp, audio streaming won't work." -ForegroundColor Yellow
     } else {
-        Write-Host "✓ yt-dlp installed" -ForegroundColor Green
+        Write-Host "[OK] yt-dlp installed" -ForegroundColor Green
     }
     
     if (-not (Test-Path $CONFIG.VLCPath)) {
-        Write-Host "⚠️  VLC not found. Install from: https://www.videolan.org/" -ForegroundColor Red
-        Write-Host "Without VLC, playback won't work." -ForegroundColor Yellow
+        Write-Host "[!] VLC not found. Install from: https://www.videolan.org/" -ForegroundColor Red
+        Write-Host "Without VLC, playback will not work." -ForegroundColor Yellow
     } else {
-        Write-Host "✓ VLC installed" -ForegroundColor Green
+        Write-Host "[OK] VLC installed" -ForegroundColor Green
     }
     
-    # Create directories
     @($CONFIG.PlaylistDir, $CONFIG.CacheDir, $CONFIG.DownloadDir) | ForEach-Object {
         if (-not (Test-Path $_)) {
             New-Item -ItemType Directory -Path $_ -Force | Out-Null
         }
     }
     
-    Write-Host "✓ Directories initialized" -ForegroundColor Green
+    Write-Host "[OK] Directories initialized" -ForegroundColor Green
     Write-Host ""
     Write-Host "SETUP REQUIRED:" -ForegroundColor Cyan
     Write-Host "1. Get Spotify API credentials from: https://developer.spotify.com" -ForegroundColor White
@@ -73,7 +67,6 @@ function Initialize-Somethingify {
     Start-Sleep -Milliseconds 1000
 }
 
-# ==================== SPOTIFY API ====================
 function Set-SpotifyCredentials {
     Write-Host ""
     Write-Host "Enter your Spotify API credentials:" -ForegroundColor Cyan
@@ -83,9 +76,8 @@ function Set-SpotifyCredentials {
     $CONFIG.SpotifyClientId = $clientId
     $CONFIG.SpotifyClientSecret = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto([System.Runtime.InteropServices.Marshal]::SecureStringToCoTaskMemUnicode($clientSecret))
     
-    # Get token
     Get-SpotifyToken
-    Write-Host "✓ Credentials saved" -ForegroundColor Green
+    Write-Host "[OK] Credentials saved" -ForegroundColor Green
     Write-Host ""
 }
 
@@ -93,16 +85,11 @@ function Get-SpotifyToken {
     $auth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("$($CONFIG.SpotifyClientId):$($CONFIG.SpotifyClientSecret)"))
     
     try {
-        $response = Invoke-RestMethod -Uri "https://accounts.spotify.com/api/token" `
-            -Method POST `
-            -Headers @{Authorization = "Basic $auth"} `
-            -Body @{grant_type = "client_credentials"} `
-            -ErrorAction Stop
-        
+        $response = Invoke-RestMethod -Uri "https://accounts.spotify.com/api/token" -Method POST -Headers @{Authorization = "Basic $auth"} -Body @{grant_type = "client_credentials"} -ErrorAction Stop
         $global:SpotifyToken = $response.access_token
         return $true
     } catch {
-        Write-Host "✗ Failed to get Spotify token" -ForegroundColor Red
+        Write-Host "[ERROR] Failed to get Spotify token" -ForegroundColor Red
         Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red
         return $false
     }
@@ -118,10 +105,7 @@ function Search-Spotify {
     
     try {
         $uri = "https://api.spotify.com/v1/search?q=$([uri]::EscapeDataString($Query))&type=$Type&limit=10"
-        $response = Invoke-RestMethod -Uri $uri `
-            -Headers @{Authorization = "Bearer $($global:SpotifyToken)"} `
-            -ErrorAction Stop
-        
+        $response = Invoke-RestMethod -Uri $uri -Headers @{Authorization = "Bearer $($global:SpotifyToken)"} -ErrorAction Stop
         return $response.tracks.items
     } catch {
         Write-Host "Search failed: $($_.Exception.Message)" -ForegroundColor Red
@@ -129,7 +113,6 @@ function Search-Spotify {
     }
 }
 
-# ==================== AUDIO STREAMING ====================
 function Get-AudioURL {
     param([string]$SongTitle, [string]$Artist)
     
@@ -165,7 +148,6 @@ function Play-Song {
     
     if ($audioUrl) {
         Write-Host "Playing audio..." -ForegroundColor Green
-        # Start VLC with URL
         if (Test-Path $CONFIG.VLCPath) {
             $global:VLCProcess = Start-Process -FilePath $CONFIG.VLCPath -ArgumentList $audioUrl -PassThru
             Write-Host "Press any key to stop..." -ForegroundColor Yellow
@@ -194,7 +176,6 @@ function Download-Song {
     }
 }
 
-# ==================== PLAYLISTS ====================
 function Create-Playlist {
     param([string]$Name)
     
@@ -206,7 +187,7 @@ function Create-Playlist {
     }
     
     @{name = $Name; songs = @(); created = (Get-Date)} | ConvertTo-Json | Set-Content $playlistPath
-    Write-Host "✓ Playlist created: $Name" -ForegroundColor Green
+    Write-Host "[OK] Playlist created: $Name" -ForegroundColor Green
 }
 
 function Add-ToPlaylist {
@@ -223,10 +204,9 @@ function Add-ToPlaylist {
     $playlist.songs += $Track
     $playlist | ConvertTo-Json -Depth 10 | Set-Content $playlistPath
     
-    Write-Host "✓ Added to playlist" -ForegroundColor Green
+    Write-Host "[OK] Added to playlist" -ForegroundColor Green
 }
 
-# ==================== MAIN MENU ====================
 function Show-MainMenu {
     Write-Host ""
     Write-Host "========================================" -ForegroundColor Cyan
@@ -304,7 +284,7 @@ function Main {
             }
             "3" { 
                 Get-ChildItem $CONFIG.PlaylistDir -Filter "*.json" | ForEach-Object {
-                    Write-Host "• $($_.BaseName)" -ForegroundColor Cyan
+                    Write-Host "[Playlist] $($_.BaseName)" -ForegroundColor Cyan
                 }
             }
             "4" { Set-SpotifyCredentials }
