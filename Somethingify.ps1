@@ -9,7 +9,7 @@
     Shivraj Suman
 
 .VERSION
-    1.0.1
+    1.0.2
 #>
 
 param()
@@ -21,14 +21,21 @@ $global:playlists = @{}
 $global:currentPlaylist = $null
 $global:isPlaying = $false
 $global:searchResults = @()
+$global:downloadPath = "$env:USERPROFILE\Downloads\Somethingify"
 
 function Initialize-Somethingify {
     Write-Host "========================================" -ForegroundColor Cyan
     Write-Host "    SOMETHINGIFY - Music Player" -ForegroundColor Green
-    Write-Host "    v1.0.1" -ForegroundColor Gray
+    Write-Host "    v1.0.2" -ForegroundColor Gray
     Write-Host "========================================" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "Loading Somethingify... Please wait." -ForegroundColor Yellow
+    
+    # Create download directory if it doesn't exist
+    if (-not (Test-Path $global:downloadPath)) {
+        New-Item -ItemType Directory -Path $global:downloadPath | Out-Null
+        Write-Host "Created download folder: $global:downloadPath" -ForegroundColor Cyan
+    }
     
     # Initialize default playlists
     $global:playlists["Liked Songs"] = @()
@@ -132,10 +139,47 @@ function Play-SearchResults {
         $global:isPlaying = $false
         
         Write-Host "Finished playing" -ForegroundColor Green
+        
+        # Ask if user wants to download
+        Write-Host ""
+        Write-Host "Download this song?" -ForegroundColor Cyan
+        Write-Host "y) Yes" -ForegroundColor White
+        Write-Host "n) No" -ForegroundColor White
+        
+        $downloadChoice = Read-Host "Select option (y/n)"
+        
+        if ($downloadChoice.ToLower() -eq "y") {
+            Download-Song $selected
+        }
+        
         Write-Host ""
     } else {
         Write-Host "Invalid selection" -ForegroundColor Red
     }
+}
+
+function Download-Song {
+    param([hashtable]$song)
+    
+    Write-Host ""
+    Write-Host "Downloading song..." -ForegroundColor Yellow
+    Write-Host "Song: $($song.Title)" -ForegroundColor Cyan
+    Write-Host "Artist: $($song.Artist)" -ForegroundColor Cyan
+    
+    # Simulate download with progress
+    $filename = "$($song.Title -replace '[^a-zA-Z0-9]', '_').mp3"
+    $filepath = Join-Path $global:downloadPath $filename
+    
+    # Simulate download progress
+    for ($i = 0; $i -le 100; $i += 10) {
+        Write-Host "[$("="*($i/5))$(" "*(20-$i/5))] $i%" -ForegroundColor Cyan
+        Start-Sleep -Milliseconds 300
+    }
+    
+    Write-Host ""
+    Write-Host "Downloaded to: $filepath" -ForegroundColor Green
+    Write-Host "Song saved successfully!" -ForegroundColor Green
+    Write-Host ""
 }
 
 function Like-Song {
@@ -254,7 +298,8 @@ function Show-Settings {
     Write-Host "1. Volume Control" -ForegroundColor White
     Write-Host "2. Audio Quality" -ForegroundColor White
     Write-Host "3. Theme" -ForegroundColor White
-    Write-Host "4. Back" -ForegroundColor White
+    Write-Host "4. Download Folder: $global:downloadPath" -ForegroundColor White
+    Write-Host "5. Back" -ForegroundColor White
     Write-Host ""
 }
 
