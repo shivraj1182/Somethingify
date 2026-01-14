@@ -9,7 +9,7 @@
     Shivraj Suman
 
 .VERSION
-    1.0.0
+    1.0.1
 #>
 
 param()
@@ -20,11 +20,12 @@ $global:currentQueue = @()
 $global:playlists = @{}
 $global:currentPlaylist = $null
 $global:isPlaying = $false
+$global:searchResults = @()
 
 function Initialize-Somethingify {
     Write-Host "========================================" -ForegroundColor Cyan
     Write-Host "    SOMETHINGIFY - Music Player" -ForegroundColor Green
-    Write-Host "    v1.0.0" -ForegroundColor Gray
+    Write-Host "    v1.0.1" -ForegroundColor Gray
     Write-Host "========================================" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "Loading Somethingify... Please wait." -ForegroundColor Yellow
@@ -72,6 +73,8 @@ function Search-Song {
         @{Title = "$query Cover"; Artist = "Various Artists"; Duration = "3:55" }
     )
     
+    $global:searchResults = $searchResults
+    
     Write-Host "Found $($searchResults.Count) results:" -ForegroundColor Green
     Write-Host ""
     
@@ -80,6 +83,73 @@ function Search-Song {
     }
     
     Write-Host ""
+    Write-Host "Options:" -ForegroundColor Cyan
+    Write-Host "a) Add to queue" -ForegroundColor White
+    Write-Host "b) Play now" -ForegroundColor White
+    Write-Host "c) Like a song" -ForegroundColor White
+    Write-Host "d) Return to menu" -ForegroundColor White
+    
+    $option = Read-Host "Select an option (a-d)"
+    
+    switch ($option.ToLower()) {
+        "a" { Add-ToQueue }
+        "b" { Play-SearchResults }
+        "c" { Like-Song }
+        "d" { return }
+        default { Write-Host "Invalid option" -ForegroundColor Red }
+    }
+}
+
+function Add-ToQueue {
+    Write-Host ""
+    Write-Host "Select song number to add to queue:" -ForegroundColor Cyan
+    $songNum = Read-Host "Enter number (1-$($global:searchResults.Count))"
+    
+    if ([int]::TryParse($songNum, [ref]$null) -and $songNum -ge 1 -and $songNum -le $global:searchResults.Count) {
+        $selected = $global:searchResults[[int]$songNum - 1]
+        $global:currentQueue += $selected.Title
+        Write-Host "Added '$($selected.Title)' to queue" -ForegroundColor Green
+    } else {
+        Write-Host "Invalid selection" -ForegroundColor Red
+    }
+}
+
+function Play-SearchResults {
+    Write-Host ""
+    Write-Host "Select song number to play:" -ForegroundColor Cyan
+    $songNum = Read-Host "Enter number (1-$($global:searchResults.Count))"
+    
+    if ([int]::TryParse($songNum, [ref]$null) -and $songNum -ge 1 -and $songNum -le $global:searchResults.Count) {
+        $selected = $global:searchResults[[int]$songNum - 1]
+        Write-Host ""
+        Write-Host "Now playing: $($selected.Title)" -ForegroundColor Green
+        Write-Host "Artist: $($selected.Artist)" -ForegroundColor Yellow
+        Write-Host "Duration: $($selected.Duration)" -ForegroundColor Magenta
+        Write-Host "[====================] 100%" -ForegroundColor Cyan
+        
+        $global:isPlaying = $true
+        Start-Sleep -Milliseconds 2000
+        $global:isPlaying = $false
+        
+        Write-Host "Finished playing" -ForegroundColor Green
+        Write-Host ""
+    } else {
+        Write-Host "Invalid selection" -ForegroundColor Red
+    }
+}
+
+function Like-Song {
+    Write-Host ""
+    Write-Host "Select song number to like:" -ForegroundColor Cyan
+    $songNum = Read-Host "Enter number (1-$($global:searchResults.Count))"
+    
+    if ([int]::TryParse($songNum, [ref]$null) -and $songNum -ge 1 -and $songNum -le $global:searchResults.Count) {
+        $selected = $global:searchResults[[int]$songNum - 1]
+        $global:playlists["Liked Songs"] += $selected.Title
+        Write-Host "Liked: $($selected.Title)" -ForegroundColor Red
+    } else {
+        Write-Host "Invalid selection" -ForegroundColor Red
+    }
 }
 
 function Get-Recommendations {
